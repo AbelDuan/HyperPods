@@ -19,6 +19,8 @@ object HyperPodsAction {
     const val ACTION_PODS_BATTERY_CHANGED = PREFIX + "pods_battery_changed"
 
     const val ACTION_ANC_SELECT = PREFIX + "anc_select"
+    /** HyperPods -> 系统蓝牙：把电量/ANC/佩戴推给官方 UI 读的 AirpodsModel。 */
+    const val ACTION_SYSTEM_SYNC = PREFIX + "system_sync"
     const val ACTION_PODS_RENAME = PREFIX + "rename"
     const val ACTION_PODS_ANC_CHANGED = PREFIX + "pods_anc_select"
     const val ACTION_EAR_DETECTION_STATUS_CHANGED = PREFIX + "ear_detection_status_changed"

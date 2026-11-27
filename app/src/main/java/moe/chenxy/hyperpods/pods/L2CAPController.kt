@@ -295,6 +295,7 @@ object L2CAPController {
     }
 
     private fun changeUIInEarStatus(status: EarDetectionParams) {
+        pushStateToSystem()
         Intent(HyperPodsAction.ACTION_EAR_DETECTION_STATUS_CHANGED).apply {
             this.putExtra("status", status)
             this.`package` = BuildConfig.APPLICATION_ID
@@ -304,11 +305,43 @@ object L2CAPController {
     }
 
     private fun changeUIBatteryStatus(status: BatteryParams) {
+        pushStateToSystem()
         Intent(HyperPodsAction.ACTION_PODS_BATTERY_CHANGED).apply {
             this.putExtra("status", status)
             this.`package` = BuildConfig.APPLICATION_ID
             this.addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
             HyperPodsBroadcasts.send(mContext, this)
+        }
+    }
+
+    /**
+     * 把当前状态推给系统蓝牙进程，由它写进官方详情页读的 AirpodsModel。
+     *
+     * 官方 UI 只认自己的 AACP 通道，HyperPods 独占通道后它读不到任何东西，
+     * 所以这里把电量 / ANC / 佩戴主动送过去，让系统页面和控制中心显示真实状态。
+     */
+    fun pushStateToSystem() {
+        try {
+            val ctx = mContext ?: return
+            val battery = currentBatteryParams
+            val anc = confirmedSettings()[PodsSettings.NOISE_MODE] ?: 0
+            val address = currentPodsInfo?.let { mDevice.address } ?: return
+            val intent = Intent(HyperPodsAction.ACTION_SYSTEM_SYNC).apply {
+                putExtra("address", address)
+                putExtra("anc", anc)
+                putExtra("left", battery.left?.battery ?: -1)
+                putExtra("right", battery.right?.battery ?: -1)
+                putExtra("box", battery.case?.battery ?: -1)
+                putExtra("left_charging", battery.left?.isCharging ?: false)
+                putExtra("right_charging", battery.right?.isCharging ?: false)
+                putExtra("box_charging", battery.case?.isCharging ?: false)
+                putExtra("left_in_case", battery.left?.isInCase ?: false)
+                putExtra("right_in_case", battery.right?.isInCase ?: false)
+                putExtra("model", currentPodsInfo?.modelNumber.orEmpty())
+            }
+            HyperPodsBroadcasts.send(ctx, intent, HyperPodsBroadcasts.XIAOMI_BLUETOOTH)
+        } catch (t: Throwable) {
+            Log.w(TAG, "pushStateToSystem failed: $t")
         }
     }
 

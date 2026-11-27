@@ -46,6 +46,8 @@ public final class BridgeEntry {
 
     private static final String SP_AIRPODS = "AirpodsModel";
     private static final String ACTION_ANC_SELECT = "io.github.mo_setian.hyperpods.action.anc_select";
+    /** HyperPods 把电量/ANC/佩戴推过来，由本进程写进官方读的 AirpodsModel。 */
+    private static final String ACTION_SYSTEM_SYNC = "io.github.mo_setian.hyperpods.action.system_sync";
     private static final String HYPERPODS_PROC = "com.android.bluetooth";
 
     private static final String BOLT = "\u26A1";
@@ -90,6 +92,7 @@ public final class BridgeEntry {
         hookOfficialAacp(cl);
         hookAncCommand(cl);
         hookApplication(cl);
+        installSystemSyncReceiver(appContext);
         hookToastProbe();
         // AirPodsInfo 在 /product/app/LyraSdkSpp/LyraSdkSpp.apk，等它进 classpath 后再说
         final ClassLoader ccl = cl;
@@ -931,6 +934,74 @@ public final class BridgeEntry {
     private static volatile boolean ancReceiverInstalled;
 
     /** 在蓝牙进程注册接收器，本地写 -air_anc 并通知 Repository */
+    /** 收 HyperPods 推来的完整状态，写进官方 SP 并通知 provider 重读。 */
+    private static void installSystemSyncReceiver(Context ctx) {
+        if (systemSyncReceiver != null) {
+            return;
+        }
+        try {
+            android.content.BroadcastReceiver r = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    try {
+                        handleSystemSync(context, intent);
+                    } catch (Throwable t) {
+                        log("system sync failed: " + t);
+                    }
+                }
+            };
+            android.content.IntentFilter f = new android.content.IntentFilter(ACTION_SYSTEM_SYNC);
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                ctx.registerReceiver(r, f, Context.RECEIVER_EXPORTED);
+            } else {
+                ctx.registerReceiver(r, f);
+            }
+            systemSyncReceiver = r;
+            log("system sync receiver installed");
+        } catch (Throwable t) {
+            log("install system sync receiver failed: " + t);
+        }
+    }
+
+    private static volatile android.content.BroadcastReceiver systemSyncReceiver;
+
+    private static void handleSystemSync(Context ctx, Intent i) {
+        if (i == null || !flag(GLOBAL_BATTERY)) {
+            return;
+        }
+        String address = i.getStringExtra("address");
+        if (address == null || address.isEmpty()) {
+            return;
+        }
+        String mac = address.toUpperCase(Locale.US);
+        int anc = i.getIntExtra("anc", 0);
+        int left = i.getIntExtra("left", -1);
+        int right = i.getIntExtra("right", -1);
+        int box = i.getIntExtra("box", -1);
+        boolean lc = i.getBooleanExtra("left_charging", false);
+        boolean rc = i.getBooleanExtra("right_charging", false);
+        boolean bc = i.getBooleanExtra("box_charging", false);
+        boolean lin = i.getBooleanExtra("left_in_case", false);
+        boolean rin = i.getBooleanExtra("right_in_case", false);
+
+        // ANC 只在有效值时才覆盖，避免 0（未知）把界面刷成空
+        if (anc >= 1 && anc <= 4) {
+            writeKey(mac, "-air_anc", String.format(Locale.US, "%02d", anc));
+        }
+        // -state：左|右|盒|佩戴位|充电位|0|0|0
+        int wearBits = (lin ? 0 : 1) | (rin ? 0 : 2);
+        int chargeBits = (lc ? 1 : 0) | (rc ? 2 : 0) | (bc ? 4 : 0);
+        String state = left + "|" + right + "|" + box + "|" + wearBits + "|" + chargeBits + "|0|0|0";
+        writeKey(mac, "-state", state);
+        String battery = String.format(Locale.US, "%02d%02d%02d%02d%02d%02d%02d",
+                left < 0 ? 0 : left, lc ? 1 : 2,
+                right < 0 ? 0 : right, rc ? 1 : 2,
+                box < 0 ? 0 : box, bc ? 1 : 2, 2);
+        writeKey(mac, "-air_battery", battery);
+        log("sync state anc=" + anc + " " + state + " battery=" + battery);
+        notifyAirpodsRepository();
+    }
+
     private static void installAncWriteReceiver(Context ctx) {
         if (ancReceiverInstalled) {
             return;
