@@ -92,7 +92,6 @@ public final class BridgeEntry {
         hookOfficialAacp(cl);
         hookAncCommand(cl);
         hookApplication(cl);
-        installSystemSyncReceiver(appContext);
         hookToastProbe();
         // AirPodsInfo 在 /product/app/LyraSdkSpp/LyraSdkSpp.apk，等它进 classpath 后再说
         final ClassLoader ccl = cl;
@@ -308,6 +307,7 @@ public final class BridgeEntry {
                             appContext = (Context) param.thisObject;
                             installNotifyHook();
                             installAncWriteReceiver((Context) param.thisObject);
+                            installSystemSyncReceiver((Context) param.thisObject);
                         }
                     });
             log("hook MiuiApplication.onCreate ok");
