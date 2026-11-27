@@ -836,12 +836,20 @@ public final class BridgeEntry {
                                     dt.start();
                                 }
                                 // settings 进程读不到 com.xiaomi.bluetooth 的 SP，交给蓝牙进程写
-                                sendAncWrite(mode);
+                                sendAncWrite(toOfficialAnc(mode));
                             }
                             param.setResult(null);
-                            // 让图标立刻跟上，不等官方回读
-                            // initAncState 的参数是 BluetoothHeadset（HFP），AirPods 的 ANC 不走 HFP，
-                            // 调它只会把界面刷成错误状态（实测"降噪点不了"），这里彻底不碰 UI
+                            // 让图标立刻跟上：updateView(Context,int) 是官方刷新按钮图标的入口，
+                            // 参数用官方编码（1 降噪 / 2 关闭 / 3 通透 / 4 自适应）
+                            try {
+                                int official = toOfficialAnc(mode);
+                                java.lang.reflect.Method uv = param.thisObject.getClass()
+                                        .getMethod("updateView", android.content.Context.class, int.class);
+                                uv.invoke(param.thisObject, context(), official);
+                                log("updateView -> " + official);
+                            } catch (Throwable t) {
+                                log("updateView failed: " + t);
+                            }
                         } catch (Throwable t) {
                             log("settings anc failed: " + t);
                         }
@@ -890,6 +898,23 @@ public final class BridgeEntry {
 
 
     /** 让官方详情页重新读一次状态（和 h1.a.d 里 notifyChange 的做法一致） */
+    /**
+     * HyperPods 的 ANC 编码 → 官方 AncController 的编码。
+     *
+     * AncController 常量：ANC_ON=1（降噪）、ANC_OFF=2（关闭）、ANC_TRANSPARENT=3、ANC_ADAPTIVE=4；
+     * HyperPods 是 1=关闭、2=降噪、3=通透、4=自适应。关闭和降噪正好互换。
+     */
+    private static int toOfficialAnc(int hyperPodsMode) {
+        switch (hyperPodsMode) {
+            case 1:
+                return 2;
+            case 2:
+                return 1;
+            default:
+                return hyperPodsMode;
+        }
+    }
+
     /** 从 settings 进程把要写的 ANC 值广播给 com.xiaomi.bluetooth */
     private static void sendAncWrite(int mode) {
         try {
