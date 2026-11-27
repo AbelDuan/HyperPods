@@ -659,11 +659,24 @@ public final class BridgeEntry {
      * setAncForUser 的 mode 与官方 -air_anc 同一套编码：1=关闭 2=降噪 3=通透
      * （实测点击只会产生 2 和 3，0 未见，按不处理走）
      */
+    /**
+     * setAncForUser(int mode) 的 mode 是官方 AncController 编码
+     * （1=降噪 2=关闭 3=通透 4=自适应），转成 HyperPods 的
+     * （1=关闭 2=降噪 3=通透 4=自适应）。
+     */
     private static int ancStatusFromSettings(int mode) {
-        if (mode >= 1 && mode <= 3) {
-            return mode;
+        switch (mode) {
+            case 1:
+                return 2;
+            case 2:
+                return 1;
+            case 3:
+                return 3;
+            case 4:
+                return 4;
+            default:
+                return 0;
         }
-        return 0;
     }
 
 
@@ -836,17 +849,16 @@ public final class BridgeEntry {
                                     dt.start();
                                 }
                                 // settings 进程读不到 com.xiaomi.bluetooth 的 SP，交给蓝牙进程写
-                                sendAncWrite(toOfficialAnc(mode));
+                                sendAncWrite(mode);
                             }
                             param.setResult(null);
                             // 让图标立刻跟上：updateView(Context,int) 是官方刷新按钮图标的入口，
                             // 参数用官方编码（1 降噪 / 2 关闭 / 3 通透 / 4 自适应）
                             try {
-                                int official = toOfficialAnc(mode);
                                 java.lang.reflect.Method uv = param.thisObject.getClass()
                                         .getMethod("updateView", android.content.Context.class, int.class);
-                                uv.invoke(param.thisObject, context(), official);
-                                log("updateView -> " + official);
+                                uv.invoke(param.thisObject, context(), mode);
+                                log("updateView -> " + mode);
                             } catch (Throwable t) {
                                 log("updateView failed: " + t);
                             }
@@ -898,23 +910,6 @@ public final class BridgeEntry {
 
 
     /** 让官方详情页重新读一次状态（和 h1.a.d 里 notifyChange 的做法一致） */
-    /**
-     * HyperPods 的 ANC 编码 → 官方 AncController 的编码。
-     *
-     * AncController 常量：ANC_ON=1（降噪）、ANC_OFF=2（关闭）、ANC_TRANSPARENT=3、ANC_ADAPTIVE=4；
-     * HyperPods 是 1=关闭、2=降噪、3=通透、4=自适应。关闭和降噪正好互换。
-     */
-    private static int toOfficialAnc(int hyperPodsMode) {
-        switch (hyperPodsMode) {
-            case 1:
-                return 2;
-            case 2:
-                return 1;
-            default:
-                return hyperPodsMode;
-        }
-    }
-
     /** 从 settings 进程把要写的 ANC 值广播给 com.xiaomi.bluetooth */
     private static void sendAncWrite(int mode) {
         try {
