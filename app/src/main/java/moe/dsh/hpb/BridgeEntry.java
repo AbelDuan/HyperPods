@@ -895,11 +895,11 @@ public final class BridgeEntry {
                     continue;
                 }
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
+                    // 必须在 before 拦：checkAncAccess 内部先 Toast 再 return false，
+                    // after 里改返回值时"请佩戴耳机"已经弹出来了。
                     @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        if (param.getResult() instanceof Boolean && !((Boolean) param.getResult())) {
-                            param.setResult(Boolean.TRUE);
-                        }
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        param.setResult(Boolean.TRUE);
                     }
                 });
                 hooked++;
@@ -998,6 +998,10 @@ public final class BridgeEntry {
                 right < 0 ? 0 : right, rc ? 1 : 2,
                 box < 0 ? 0 : box, bc ? 1 : 2, 2);
         writeKey(mac, "-air_battery", battery);
+        // checkAncAccess 只认两位：00=没戴(弹提示) 01=戴着 02=直接放行。
+        // 之前写的是四位的 0101，匹配不上任何分支就落到 return false，"请佩戴耳机"就是这么来的。
+        boolean anyOutOfCase = !lin || !rin;
+        writeKey(mac, "-air_wear_state", anyOutOfCase ? "02" : "00");
         log("sync state anc=" + anc + " " + state + " battery=" + battery);
         notifyAirpodsRepository();
     }
