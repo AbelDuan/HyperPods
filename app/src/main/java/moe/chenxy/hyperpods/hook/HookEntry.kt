@@ -16,10 +16,19 @@ object HookEntry : IYukiHookXposedInit {
         loadApp("com.android.bluetooth") {
             loadHooker(ModuleStatusHook("com.android.bluetooth"))
             loadHooker(HeadsetStateDispatcher)
+            // 系统蓝牙进程：放行 HyperPods 的广播信任校验
+            moe.dsh.hpb.BridgeEntry.install(packageName, appClassLoader, appContext)
         }
         loadApp("com.xiaomi.bluetooth") {
             loadHooker(ModuleStatusHook("com.xiaomi.bluetooth"))
             loadHooker(MiBluetoothToastHook)
+            // 官方 AirPods 支持：拦 AACP 建连、写电量、转发 ANC
+            moe.dsh.hpb.BridgeEntry.install(packageName, appClassLoader, appContext)
+        }
+        // 系统设置：官方详情页的降噪按钮转发给 HyperPods
+        loadApp("com.android.settings") {
+            loadHooker(ModuleStatusHook("com.android.settings"))
+            moe.dsh.hpb.BridgeEntry.install(packageName, appClassLoader, appContext)
         }
     }
 
