@@ -88,6 +88,9 @@ public final class BridgeEntry {
         }
         if ("com.android.bluetooth".equals(packageName)) {
             hookAncTrust(classLoader);
+            // AAC-ELD 编码器：hook libbluetooth_jni.so 的 A2DP codec 接口。
+            // 库或栈不适配时返回 false，不影响其它功能。
+            AacEldBridge.INSTANCE.start();
             return;
         }
         if (!"com.xiaomi.bluetooth".equals(packageName)) {
@@ -1239,7 +1242,7 @@ public final class BridgeEntry {
         log("toast probe installed");
     }
 
-    private static void log(String msg) {
+    static void log(String msg) {
         XposedBridge.log(TAG + ": " + msg);
     }
 }

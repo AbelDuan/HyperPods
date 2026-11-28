@@ -37,6 +37,8 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += ""
+                // AAC-ELD 的 hook 只实现了 arm64（原模块同样只发 arm64-v8a）
+                abiFilters += "arm64-v8a"
             }
         }
     }
