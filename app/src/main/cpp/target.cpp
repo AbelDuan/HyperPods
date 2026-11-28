@@ -463,7 +463,7 @@ bool target_resolve() {
   if (aac_handle != nullptr) aac_external = true;
   if (aac_external) LOGI("%s loaded, using it for the AAC encoder symbols", kAacLibName);
 
-  int missing = 0, found = 0;
+  int missing = 0, found = 0, aac_missing = 0;
   for (const Name& n : kNames) {
     void* p = lookup(handle, n.symbol);
     const bool is_aac = strncmp(n.symbol, "aac", 3) == 0;
@@ -473,8 +473,14 @@ bool target_resolve() {
     if (p != nullptr) found++;
     if (p == nullptr) {
       if (n.required) {
-        LOGE("not in this build: %s", n.symbol);
-        missing++;
+        // FDK-AAC 在部分 ROM 上是按需 dlopen 的：AAC 编码器没初始化之前
+        // 那个库根本不在进程里。这种情况不能判成"不适配"，要留机会重试。
+        if (is_aac) {
+          aac_missing++;
+        } else {
+          LOGE("not in this build: %s", n.symbol);
+          missing++;
+        }
       }
       continue;
     }
@@ -504,6 +510,12 @@ bool target_resolve() {
          "in this build, so nothing will be hooked", missing);
     target_startup_done();
     g_target_unusable = true;
+    return false;
+  }
+  if (aac_missing != 0) {
+    // FDK-AAC 在部分 ROM 上按需 dlopen：AAC 编码器初始化前那个库不在进程里。
+    // 不能判成不适配，交给 waiter 继续轮询。
+    LOGI("%d AAC symbol(s) unresolved, waiting for libFraunhoferAAC.so", aac_missing);
     return false;
   }
 
