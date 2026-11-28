@@ -25,6 +25,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <!-- 真正的悬浮窗版本：Activity 的窗口类型改不了，压不过其它浮窗 -->
+        <service
+            android:name="moe.chenxy.hyperpods.QuickControlsOverlayService"
+            android:exported="false" />
+
         <activity android:name="moe.chenxy.hyperpods.QuickControlsActivity"
             android:excludeFromRecents="true"
             android:exported="true"
