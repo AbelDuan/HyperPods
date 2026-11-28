@@ -78,10 +78,8 @@ object L2CAPController {
     private var socket: BluetoothSocket? = null
     private var mContext: Context? = null
 
-    private companion object {
-        /** 系统设置页会转发佩戴检测开关，需要单独放行。 */
-        const val SETTINGS_PACKAGE = "com.android.settings"
-    }
+    /** 系统设置页会转发佩戴检测开关，需要单独放行。 */
+    private const val SETTINGS_PACKAGE = "com.android.settings"
     lateinit var mDevice: BluetoothDevice
     private val audioManager: AudioManager?
         get() = mContext?.getSystemService(AudioManager::class.java)
