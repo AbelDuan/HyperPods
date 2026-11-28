@@ -595,16 +595,25 @@ bool target_measure_getters() {
       measure_struct_getter(kOffsets.CodecConfig_getCodecUserConfig, "codec_user_config_", &user, &user_size);
   if (!measured) return false;
 
-  // One btav_a2dp_codec_config_t is 56 bytes in every version of the
-  // framework header this module's writes are laid out for.
-  if (config_size != CFG_SIZE || user_size != CFG_SIZE) {
-    LOGE("a codec config is %zu bytes here, this module writes %d byte ones", config_size, CFG_SIZE);
+  // btav_a2dp_codec_config_t 在不同 ROM 上宽度不同：本模块按 56 字节写，
+  // 但 HyperOS 4 / Android 17 上是 64 字节。两个 getter 报出来的宽度一致、
+  // 且后面能推出自洽的偏移，就按实测步长走，不再按 56 硬比。
+  if (config_size != user_size || config_size < 0x30 || config_size > 0x60 ||
+      config_size % 8 != 0) {
+    LOGE("a codec config is %zu/%zu bytes here, which this module cannot lay out",
+         config_size, user_size);
     return false;
+  }
+  const size_t cfg = config_size;
+  g_layout.config_size = cfg;
+  if (cfg != CFG_SIZE) {
+    LOGI("codec config is %zu bytes here (module was written for %d), using the measured width",
+         cfg, CFG_SIZE);
   }
   // config, [capability,] local capability, selectable capability, user config.
   const size_t between = (user > config) ? (user - config) : 0;
-  if (config < 0x40 || between % CFG_SIZE != 0 ||
-      (between / CFG_SIZE != 3 && between / CFG_SIZE != 4)) {
+  if (config < 0x40 || between % cfg != 0 ||
+      (between / cfg != 3 && between / cfg != 4)) {
     LOGE("codec_config_ at 0x%zx and codec_user_config_ at 0x%zx do not fit the class this "
          "module knows", config, user);
     return false;
@@ -613,12 +622,12 @@ bool target_measure_getters() {
   g_layout.priority = config - 8;
   g_layout.config = config;
   g_layout.user_config = user;
-  g_layout.selectable_capability = user - CFG_SIZE;
-  g_layout.local_capability = user - 2 * CFG_SIZE;
-  g_layout.audio_config = user + CFG_SIZE;
-  g_layout.ota_config = user + 2 * CFG_SIZE;   // confirmed by target_measure_ota
+  g_layout.selectable_capability = user - cfg;
+  g_layout.local_capability = user - 2 * cfg;
+  g_layout.audio_config = user + cfg;
+  g_layout.ota_config = user + 2 * cfg;   // confirmed by target_measure_ota
   LOGI("measured: codec_config_ 0x%zx, codec_user_config_ 0x%zx, %s codec_capability_",
-       config, user, between / CFG_SIZE == 4 ? "with" : "no");
+       config, user, between / cfg == 4 ? "with" : "no");
   return true;
 }
 
@@ -628,9 +637,10 @@ bool target_measure_ota() {
   // Straight after codec_audio_config_ is where it belongs. The two
   // neighbours are tried too, in case a build has one config more or fewer
   // behind codec_user_config_.
-  const size_t candidates[] = {g_layout.user_config + 2 * CFG_SIZE,
-                               g_layout.user_config + 3 * CFG_SIZE,
-                               g_layout.user_config + 1 * CFG_SIZE};
+  const size_t step = g_layout.config_size;
+  const size_t candidates[] = {g_layout.user_config + 2 * step,
+                               g_layout.user_config + 3 * step,
+                               g_layout.user_config + 1 * step};
   size_t at = 0, size = 0;
   for (size_t c : candidates) {
     if (try_ota_at(c, &size)) { at = c; break; }
@@ -648,7 +658,7 @@ bool target_measure_ota() {
   g_layout.ota_size = size;
   g_layout.ota_peer_capability = at + size;
   g_layout.ota_peer_config = at + 2 * size;
-  g_layout.audio_config = at - CFG_SIZE;
+  g_layout.audio_config = at - step;
   g_layout.ok = true;
   LOGI("layout: priority 0x%zx config 0x%zx local 0x%zx selectable 0x%zx user 0x%zx audio 0x%zx "
        "ota 0x%zx peer capability 0x%zx peer config 0x%zx, %zu bytes each",

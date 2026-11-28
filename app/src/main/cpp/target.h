@@ -153,6 +153,7 @@ struct CodecLayout {
   size_t ota_peer_capability = 0;
   size_t ota_peer_config = 0;
   size_t ota_size = 0;         // AVDT_CODEC_SIZE of this build
+  size_t config_size = 0x38;   // 实测的 btav_a2dp_codec_config_t 大小
 };
 extern CodecLayout g_layout;
 
