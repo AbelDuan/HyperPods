@@ -67,3 +67,69 @@ hpb_battery_bridge       电量写入
 它 clone 本仓库 `custom` 分支、用 `hpb` keystore 签名、产出 artifact `hyperpods-bridge-apk`。
 
 签名和已安装的官方 HyperPods 不同，覆盖安装即可（本机允许跨签名覆盖、保数据）。
+
+## 编码对照（踩过的坑，改前必看）
+
+官方 `AncController` 里有两套编码，方向相反，混用会让降噪和关闭互换：
+
+| 场景 | 编码 |
+|---|---|
+| 按钮 / `setAncForUser(int)` / `updateView(int)` | `1`=降噪 `2`=关闭 `3`=通透 `4`=自适应 |
+| `air_anc` 存储值 / AACP 命令码 | `01`=关闭 `02`=降噪 `03`=通透 `04`=自适应 |
+| HyperPods `NoiseControlMode.ordinal + 1` | `1`=关闭 `2`=降噪 `3`=通透 `4`=自适应 |
+
+`AncController.toCommandCode()` 是官方唯一定义：按钮 1 → `"02"`，按钮 2 → `"01"`。
+
+**所以**：`-air_anc` 一律写命令码；按钮码只在 `ancStatusFromSettings()` 里转换一次。
+`BridgeEntry.ancStatus(String)` 收的是命令码，**必须 1:1 直传**，不能互换。
+
+## 佩戴检测同步
+
+系统 `WearDetectionController` 与 HyperPods 的「自动入耳检测」是同一件事的两个副本：
+
+| 位置 | 键 | 值 |
+|---|---|---|
+| 系统 SP | `AirpodsModel["<mac>-local_ear_detection"]` | `01` 开 / `02` 关 |
+| HyperPods 模块侧 | `files/app_settings.json` 的 `ear_detection` | boolean |
+| HyperPods App 侧 | 同上，但**独立进程独立文件** | boolean |
+
+链路里两个坑：
+
+1. `L2CAPController.onReceive` 开头按来源做 `isTrusted` 校验，默认只认自己的包名，
+   `com.android.settings` 发来的广播会被整个丢掉 → `ACTION_EAR_DETECTION_SWITCH_CHANGED` 单独放行；
+2. `updateFeatureToggle` 每次都从 `AppPreferences`（filesDir 的 JSON）重读快照，
+   只改内存变量会被下次刷新覆盖 → 收到广播必须先 `AppPreferences.save()` + `publish()`；
+   `publish` 要同时发给蓝牙进程和 App 进程，`MainUI` 才能刷新界面。
+
+## 超级岛与通知栏
+
+- 超级岛：`islandShownFor` 按 MAC 记录，**只在连接时弹一次**；之后电量变化只
+  `notifyAsUser` 刷新通知，不再 `sendFocus`（否则电量一变岛就被重新拉起）。
+  断开时清标记，下次连接可再弹。
+- 通知栏电量单行：`buildNotification` 里的 `setContentText`，顺序 **左 → 右 → 盒**。
+  充电盒合盖后不再上报，放最后才不会有位置跳动。`PodsIslandData.expandedText` 同步了同样顺序。
+
+## 控制面板窗口层级的上限（实测结论）
+
+`QuickControlsActivity` 是普通 Activity，窗口类型由 WindowManagerService 按 window token
+强制设定，**`setType(TYPE_APPLICATION_OVERLAY)` 会被完全忽略**：
+
+```
+mAttrs = ty=BASE_APPLICATION     mBaseLayer = 21000
+```
+
+改成 `WindowManager.addView` + `TYPE_APPLICATION_OVERLAY` 能到 `111000`，但小米安全中心的
+`com.miui.securitycenter/.FloatingWindow` 用的是 `SYSTEM_ALERT`，`mBaseLayer = 121000`，
+仍然更高。`SYSTEM_ALERT` 需要系统签名，第三方拿不到。
+
+**应用层封顶就是 `APPLICATION_OVERLAY`(111000)**，再往上只有无障碍服务的
+`ACCESSIBILITY_OVERLAY`。当前按用户选择保留 Activity 方案。
+
+## 每次装包必须同步 LSPosed 的 apk_path
+
+`pm install -r` 会换 APK 路径，而 LSPosed 的 `modules_config.db` 里存的是绝对路径，
+路径失效时模块**静默不注入**（没有任何报错）。装完必须：
+
+1. 拉 `modules_config.db`，把 `moe.dsh.hpb` / `io.github.mo_setian.hyperpods` 的 `apk_path` 改成新路径；
+2. 推回 `/data/adb/lspd/config/modules_config.db`，`chown root:root`、`chmod 600`，删掉 `-wal`/`-shm`；
+3. `ksud soft-reboot`（`lspd` 不能手动重启，会报 `system service is not ready`）。
