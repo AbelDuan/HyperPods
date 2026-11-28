@@ -26,7 +26,6 @@ import com.hyperfocus.api.FocusApi
 import de.robv.android.xposed.XposedHelpers
 import moe.chenxy.hyperpods.BuildConfig
 import moe.chenxy.hyperpods.QuickControlsActivity
-import moe.chenxy.hyperpods.QuickControlsOverlayService
 import moe.chenxy.hyperpods.R
 import moe.chenxy.hyperpods.utils.PodsIslandData
 import moe.chenxy.hyperpods.utils.LowBatterySettings
@@ -192,11 +191,10 @@ object MiBluetoothToastHook : YukiBaseHooker(){
                 "miui.appIcon",
                 Icon.createWithResource(context, ic_headset_notification)
             )
-            // 走 Service 的 overlay 窗口，才能盖在其它应用浮窗之上
-            val pendingIntent = PendingIntent.getService(
+            val pendingIntent = PendingIntent.getActivity(
                 context,
                 0,
-                QuickControlsOverlayService.intent(context, address),
+                QuickControlsActivity.notificationIntent(address),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
