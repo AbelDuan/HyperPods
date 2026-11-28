@@ -265,9 +265,27 @@ object MiBluetoothToastHook : YukiBaseHooker(){
             )
         }
 
+        /**
+         * 每个耳机的超级岛只在连接时弹一次；之后电量变化只更新通知栏入口，
+         * 不再调 sendFocus，否则电量一变岛屿就被重新拉起、永远收不回去。
+         */
+        private val islandShownFor = java.util.Collections.synchronizedSet(HashSet<String>())
+
         fun createPodsIslandNotification(bluetoothDevice: BluetoothDevice, context: Context, batteryParams: BatteryParams,
             warning: String = "", modelNumber: String? = null) {
             val sendNotification = buildNotification(bluetoothDevice, context, batteryParams, warning)
+            val address = bluetoothDevice.address
+            if (islandShownFor.contains(address)) {
+                // 已经弹过：只刷新通知栏入口，超级岛让它按 islandTimeout 自己收起
+                try {
+                    val nm = context.getSystemService("notification") as NotificationManager
+                    nm.notifyAsUser("BTHeadset$address", 10003,
+                        sendNotification.buildConnectedPodsNotification(), Process.myUserHandle())
+                } catch (_: Exception) {
+                }
+                return
+            }
+            islandShownFor.add(address)
 //            val actions = focusApi.actionInfo(actionIntent = actionIntent, actionIntentType = "2", actionTitle = context.resources
 //                .getString(miheadset_notification_Disconnect))
 
@@ -482,6 +500,8 @@ object MiBluetoothToastHook : YukiBaseHooker(){
                             HyperPodsAction.ACTION_CANCEL_NOTIFICATION ->
                                 intent.getParcelableExtra("device", BluetoothDevice::class.java)?.let {
                                     if (it == warningDevice) cancelWarning()
+                                    // 断开后清掉标记，下次连接才能重新弹一次超级岛
+                                    islandShownFor.remove(it.address)
                                     cancelNotification(it, context)
                                 }
                             HyperPodsAction.ACTION_PODS_CONNECTING ->
