@@ -119,6 +119,14 @@ fun MainUI() {
                             NoiseControlMode.entries[status - 1]
                     }
 
+                    HyperPodsAction.ACTION_APP_SETTINGS_CHANGED -> {
+                        // 模块侧（蓝牙进程）改了设置，界面跟着刷新
+                        AppPreferences.decode(p1.getStringExtra(AppPreferences.EXTRA))?.let {
+                            earDetectionEnable.value = it.earDetection
+                            autoSwitchToSpeaker.value = it.switchSpeaker
+                        }
+                    }
+
                     HyperPodsAction.ACTION_EAR_DETECTION_STATUS_CHANGED -> {
                         earDetectionParams.value =
                             p1.getParcelableExtra("status", EarDetectionParams::class.java) ?: return
@@ -201,6 +209,7 @@ fun MainUI() {
 
         context.registerReceiver(broadcastReceiver, IntentFilter().apply {
             this.addAction(HyperPodsAction.ACTION_PODS_ANC_CHANGED)
+            this.addAction(HyperPodsAction.ACTION_APP_SETTINGS_CHANGED)
             this.addAction(HyperPodsAction.ACTION_EAR_DETECTION_STATUS_CHANGED)
             this.addAction(HyperPodsAction.ACTION_PODS_BATTERY_CHANGED)
             this.addAction(HyperPodsAction.ACTION_PODS_CONNECTED)

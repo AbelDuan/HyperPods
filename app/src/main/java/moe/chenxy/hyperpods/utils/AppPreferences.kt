@@ -153,7 +153,11 @@ object AppPreferences {
     }
 
     fun publish(context: Context, snapshot: Snapshot) {
-        HyperPodsBroadcasts.send(context, Intent(HyperPodsAction.ACTION_APP_SETTINGS_CHANGED)
-            .putExtra(EXTRA, snapshot.encode()), HyperPodsBroadcasts.BLUETOOTH)
+        val intent = Intent(HyperPodsAction.ACTION_APP_SETTINGS_CHANGED)
+            .putExtra(EXTRA, snapshot.encode())
+        // 蓝牙进程和本应用各存一份 app_settings.json，两边都要通知到，
+        // 否则模块侧的改动不会反映到 App 界面。
+        HyperPodsBroadcasts.send(context, Intent(intent), HyperPodsBroadcasts.BLUETOOTH)
+        HyperPodsBroadcasts.send(context, Intent(intent), BuildConfig.APPLICATION_ID)
     }
 }
