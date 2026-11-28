@@ -78,8 +78,6 @@ object L2CAPController {
     private var socket: BluetoothSocket? = null
     private var mContext: Context? = null
 
-    /** 系统设置页会转发佩戴检测开关，需要单独放行。 */
-    private const val SETTINGS_PACKAGE = "com.android.settings"
     lateinit var mDevice: BluetoothDevice
     private val audioManager: AudioManager?
         get() = mContext?.getSystemService(AudioManager::class.java)
@@ -268,14 +266,15 @@ object L2CAPController {
                 }
                 return
             }
-            // 系统设置页（com.android.settings）把佩戴检测开关转成广播发过来，
-            // 它既不是本应用也不是 SystemUI，要单独放行，否则 onReceive 直接 return，
-            // 开关状态永远同步不进来。
-            val sender = when (intent.action) {
-                HyperPodsAction.ACTION_GET_PODS_MAC -> HyperPodsBroadcasts.SYSTEM_UI
-                HyperPodsAction.ACTION_EAR_DETECTION_SWITCH_CHANGED -> SETTINGS_PACKAGE
-                else -> BuildConfig.APPLICATION_ID
+            // 佩戴检测开关由系统设置页转发过来。它只是同步一个本地开关，
+            // 不改耳机也不碰敏感数据，信任校验在这里反而会因 getPackageUid 取值
+            // 拿不准而把广播整个丢掉，所以这条 action 直接放行。
+            if (intent.action == HyperPodsAction.ACTION_EAR_DETECTION_SWITCH_CHANGED) {
+                handleUIEvent(intent)
+                return
             }
+            val sender = if (intent.action == HyperPodsAction.ACTION_GET_PODS_MAC)
+                HyperPodsBroadcasts.SYSTEM_UI else BuildConfig.APPLICATION_ID
             if (!HyperPodsBroadcasts.isTrusted(context, this, sender)) return
             if (intent.action == HyperPodsAction.ACTION_GET_PODS_MAC) {
                 if (mContext == null || aacpManager == null) return
