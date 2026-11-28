@@ -41,13 +41,14 @@ object PodsIslandData {
         // 盒电量并进同一行，避免通知栏被撑成三行把两只耳机挤掉。
         // 顺序：盒在前，左右在后，用两个空格拉开间隔。
         val line = buildString {
-            if (caseText != "HyperPods") {
-                append(caseText)
-                append("   ")
-            }
             append(ear(leftLabel, battery.left))
             append("   ")
             append(ear(rightLabel, battery.right))
+            // 盒放最后：合盖后它会消失，耳机位置不能跟着动
+            if (caseText != "HyperPods") {
+                append("   ")
+                append(caseText)
+            }
         }
         return ExpandedText(line, warning, "")
     }
