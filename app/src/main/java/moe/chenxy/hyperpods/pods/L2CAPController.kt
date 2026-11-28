@@ -140,6 +140,7 @@ object L2CAPController {
     private val pendingSettings = mutableMapOf<String, PendingSetting>()
     private val failedSettings = mutableMapOf<String, Int>()
     private var pendingOffSelection = false
+    private var pendingOffTimeout: Job? = null
     private var manualStatusProbe: Job? = null
     private var pendingRename: String? = null
     private var renameTimeout: Job? = null
@@ -1914,6 +1915,8 @@ object L2CAPController {
         pendingSettings.clear()
         failedSettings.clear()
         pendingOffSelection = false
+        pendingOffTimeout?.cancel()
+        pendingOffTimeout = null
         pendingRename = null
         renameTimeout?.cancel()
         renameTimeout = null
@@ -2036,7 +2039,13 @@ object L2CAPController {
             return
         }
         Log.d(TAG, "setANCMode: $mode")
-        if (pendingOffSelection) return
+        if (pendingOffSelection) {
+            // ALLOW_OFF_OPTION 可能永远等不到回执（固件不回），标志会卡死，
+            // 之后所有 ANC 请求都被这一行吃掉。这里放行并让后续请求继续。
+            Log.d(TAG, "setANCMode: clearing stuck pendingOffSelection")
+            pendingOffTimeout?.cancel()
+            pendingOffSelection = false
+        }
         // A user choice must replace the automatic request, not be rejected by
         // its pending confirmation. Do not cancel an unrelated user request.
         cancelSinglePodAncRestore()
@@ -2050,6 +2059,14 @@ object L2CAPController {
             // Some firmware never echoes this option. Continue after writing it,
             // retain its unconfirmed flag, and confirm success from listening mode instead.
             pendingOffSelection = true
+            pendingOffTimeout?.cancel()
+            pendingOffTimeout = CoroutineScope(Dispatchers.Default).launch {
+                delay(3000L)
+                if (pendingOffSelection) {
+                    Log.d(TAG, "pendingOffSelection timeout, releasing")
+                    pendingOffSelection = false
+                }
+            }
             sendSetting(HyperPodsPrefsKey.ALLOW_OFF_OPTION, 1)
             return
         }
