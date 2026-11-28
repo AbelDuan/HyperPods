@@ -198,13 +198,14 @@ object MiBluetoothToastHook : YukiBaseHooker(){
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
+            // 不能带换行：通知栏收起时只显示第一行，之前充电盒后面的 \n 把两只耳机全挤掉了
             val caseBattStr = if (shouldShowCaseBattery(batteryParams))
-                "${context.resources.getString(miheadset_notification_Box)}：${batteryParams.case!!.battery} %" +
-                        "${if (batteryParams.case!!.isCharging) " ⚡" else ""}\n"
+                "${context.resources.getString(miheadset_notification_Box)}：${batteryParams.case!!.battery}%" +
+                        "${if (batteryParams.case!!.isCharging) " ⚡" else ""}   "
             else ""
             val leftEar = "${context.resources.getString(miheadset_notification_LeftEar)}：${PodsIslandData.batteryText(batteryParams.left)}" +
                     (if (batteryParams.left?.isCharging == true) " ⚡" else "")
-            val rightEar = " | ${context.resources.getString(miheadset_notification_RightEar)}：${PodsIslandData.batteryText(batteryParams.right)}" +
+            val rightEar = "   ${context.resources.getString(miheadset_notification_RightEar)}：${PodsIslandData.batteryText(batteryParams.right)}" +
                     (if (batteryParams.right?.isCharging == true) " ⚡" else "")
 
             val content: String = (if (warning.isEmpty()) "" else "$warning\n") + caseBattStr + leftEar + rightEar
