@@ -47,6 +47,9 @@ public final class BridgeEntry {
     private static final String SP_AIRPODS = "AirpodsModel";
     private static final String ACTION_ANC_SELECT = "io.github.mo_setian.hyperpods.action.anc_select";
     /** HyperPods 把电量/ANC/佩戴推过来，由本进程写进官方读的 AirpodsModel。 */
+    private static final String ANC_CONTROLLER_CLASS = "plugin.settings.java.airpods.AncController";
+    private static final String AIRPODS_INFO_CLASS =
+            "com.android.bluetooth.ble.app.fastconnect.airpods.AirPodsInfo";
     private static final String ACTION_SYSTEM_SYNC = "io.github.mo_setian.hyperpods.action.system_sync";
     private static final String HYPERPODS_PROC = "com.android.bluetooth";
 
@@ -757,23 +760,26 @@ public final class BridgeEntry {
             XC_MethodHook findHook = new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
-                    if (airPodsInfoHooked || param.args.length == 0 || !(param.args[0] instanceof String)) {
-                        return;
-                    }
-                    if (!"com.android.bluetooth.ble.app.fastconnect.airpods.AirPodsInfo"
-                            .equals(param.args[0])) {
+                    if (param.args.length == 0 || !(param.args[0] instanceof String)) {
                         return;
                     }
                     Object r = param.getResult();
-                    if (r instanceof Class) {
-                        hookAirPodsInfo((Class<?>) r);
-                    } else if (param.thisObject instanceof ClassLoader) {
-                        try {
-                            hookAirPodsInfo(Class.forName((String) param.args[0], false,
-                                    (ClassLoader) param.thisObject));
-                        } catch (Throwable ignored) {
-                        }
+                    if (!(r instanceof Class)) {
+                        return;
                     }
+                    String name = (String) param.args[0];
+                    // 插件用 findClass 加载，之前这里只认 AirPodsInfo，
+                    // AncController 直接被 return 掉，setAncForUser 永远 hook 不上。
+                    if (ANC_CONTROLLER_CLASS.equals(name)) {
+                        if (!ancControllerHooked) {
+                            hookAncController((Class<?>) r);
+                        }
+                        return;
+                    }
+                    if (airPodsInfoHooked || !AIRPODS_INFO_CLASS.equals(name)) {
+                        return;
+                    }
+                    hookAirPodsInfo((Class<?>) r);
                 }
             };
             int installed = 0;
