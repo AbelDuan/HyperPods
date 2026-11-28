@@ -447,10 +447,12 @@ bool target_resolve() {
     if (slash != nullptr) {
       snprintf(slash + 1, sizeof(aac_path) - static_cast<size_t>(slash + 1 - aac_path),
                "%s", kAacLibName);
-      aac_handle = dlopen(aac_path, RTLD_NOW);
+      // 不能用 dlopen：LSPosed 给模块的 linker namespace 只放行 /data 和
+      // /mnt/expand，/apex 会被拒绝（"is not accessible for the namespace"）。
+      // xdl 自己读 ELF 并做重定位，不走 linker namespace，主库也是这么打开的。
+      aac_handle = xdl_open(aac_path, 0);
       if (aac_handle == nullptr) {
-        const char* err = dlerror();
-        LOGE("dlopen %s failed: %s", aac_path, err != nullptr ? err : "unknown");
+        LOGE("xdl_open %s failed", aac_path);
       }
     }
   }
