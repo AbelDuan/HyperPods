@@ -4,6 +4,7 @@
 #include "apple_eld.h"
 #include "log.h"
 
+#include <android/dlext.h>
 #include <dlfcn.h>
 #include <xdl.h>
 #include <elf.h>
@@ -403,6 +404,52 @@ bool try_ota_at(size_t at, size_t* size) {
 
 }  // namespace
 
+// LSPosed 给模块建的 linker namespace（clns-11）只放行 /data 和 /mnt/expand，
+// 直接 dlopen /apex 会被 linker 拒绝；xdl 的强制加载在 Android 17 上也走不通
+// （内部 linker 符号找不到）。
+//
+// 这里换一条路：自己建一个能看见 /apex 的 namespace，再用 android_dlopen_ext
+// 指定它。蓝牙栈本来就在同类 namespace 里 dlopen 这个库，所以库的依赖都能解析。
+static void* load_aac_library(const char* path) {
+  // 先按最普通的方式试一次，能成就是最省事的
+  void* handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+  if (handle != nullptr) return handle;
+
+  char dir[512];
+  snprintf(dir, sizeof(dir), "%s", path);
+  char* slash = strrchr(dir, '/');
+  if (slash == nullptr) return nullptr;
+  *slash = '\0';
+
+  // default_library_path 要把库自己的目录和系统库目录都带上，
+  // 否则 libc/liblog 这些依赖解析不了
+  char lib_paths[1024];
+  snprintf(lib_paths, sizeof(lib_paths), "%s:/apex/com.android.art/lib64:/system/lib64", dir);
+
+  android_namespace_t* ns = android_create_namespace(
+      "aaceld_aac",                                  // name
+      dir,                                           // ld_library_path
+      lib_paths,                                     // default_library_path
+      ANDROID_NAMESPACE_TYPE_REGULAR,                // shared with the default one
+      nullptr,                                       // permitted_when_isolated_path
+      nullptr,                                       // parent
+      nullptr);                                      // extinfo
+  if (ns == nullptr) {
+    LOGE("android_create_namespace failed for %s", dir);
+    return nullptr;
+  }
+
+  android_dlextinfo ext = {};
+  ext.flags = ANDROID_DLEXT_USE_NAMESPACE;
+  ext.library_namespace = ns;
+  handle = android_dlopen_ext(path, RTLD_NOW | RTLD_LOCAL, &ext);
+  if (handle == nullptr) {
+    const char* err = dlerror();
+    LOGE("android_dlopen_ext %s failed: %s", path, err != nullptr ? err : "unknown");
+  }
+  return handle;
+}
+
 // libFraunhoferAAC.so 是否已经进场（按需 dlopen，AAC 软件编码时才加载）
 static bool aac_lib_present() {
   bool found = false;
@@ -468,15 +515,9 @@ bool target_resolve() {
     if (slash != nullptr) {
       snprintf(slash + 1, sizeof(aac_path) - static_cast<size_t>(slash + 1 - aac_path),
                "%s", kAacLibName);
-      // 不能用 dlopen：LSPosed 给模块的 linker namespace 只放行 /data 和
-      // /mnt/expand，/apex 会被拒绝（"is not accessible for the namespace"）。
-      // xdl 自己读 ELF 并做重定位，不走 linker namespace，主库也是这么打开的。
-      // 必须强制加载：XDL_DEFAULT 只做 xdl_find（查已加载的库），库里没有它。
-      // XDL_ALWAYS_FORCE_LOAD 走内部 linker 的 dlopen 并伪造 caller_addr，
-      // 这样才能突破 clns-11 对 /apex 的限制。
-      aac_handle = xdl_open(aac_path, XDL_ALWAYS_FORCE_LOAD);
+      aac_handle = load_aac_library(aac_path);
       if (aac_handle == nullptr) {
-        LOGE("xdl_open %s failed", aac_path);
+        LOGE("could not load %s by any route", aac_path);
       }
     }
   }
@@ -651,7 +692,7 @@ bool target_fill_aac() {
   if (slash != nullptr) {
     snprintf(slash + 1, sizeof(aac_path) - static_cast<size_t>(slash + 1 - aac_path),
              "%s", kAacLibName);
-    aac_handle = xdl_open(aac_path, 0);
+    aac_handle = load_aac_library(aac_path);
   }
   if (aac_handle == nullptr) {
     if (main_handle != nullptr) xdl_close(main_handle);
@@ -671,7 +712,7 @@ bool target_fill_aac() {
   g_stack.aacEncInfo = reinterpret_cast<aacEncInfo_t>(sym("aacEncInfo", aac_handle));
 
   if (main_handle != nullptr) xdl_close(main_handle);
-  xdl_close(aac_handle);
+  // aac_handle 是 dlopen 拿的，故意不关：关闭会让已解析的函数指针悬空
 
   const bool ok = g_stack.aacEncOpen != nullptr && g_stack.aacEncClose != nullptr &&
                   g_stack.aacEncEncode != nullptr && g_stack.aacEncoder_SetParam != nullptr &&
