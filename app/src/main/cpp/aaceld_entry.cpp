@@ -29,7 +29,9 @@ constexpr const char* kPropDryRun = "persist.aaceld.dryrun";
 
 // 与实际加载时机对齐：AdapterService 起得晚，轮询两分钟足够。
 constexpr long kPollIntervalMs = 50;
-constexpr int kPollAttempts = 2400;
+// libFraunhoferAAC.so 要等 A2DP 真正开始软件编码才进场，可能几分钟到几十分钟。
+// 先跑 30 分钟；target_resolve 里有快速预检，库没来的时候不会做完整解析。
+constexpr int kPollAttempts = 36000;
 
 bool prop_bool(const char* name, bool fallback) {
     char value[PROP_VALUE_MAX] = {};

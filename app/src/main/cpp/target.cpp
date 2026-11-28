@@ -403,9 +403,27 @@ bool try_ota_at(size_t at, size_t* size) {
 
 }  // namespace
 
+// libFraunhoferAAC.so 是否已经进场（按需 dlopen，AAC 软件编码时才加载）
+static bool aac_lib_present() {
+  bool found = false;
+  dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) {
+    if (info->dlpi_name == nullptr) return 0;
+    const char* slash = strrchr(info->dlpi_name, '/');
+    const char* leaf = slash != nullptr ? slash + 1 : info->dlpi_name;
+    if (strcmp(leaf, kAacLibName) == 0) {
+      *static_cast<bool*>(data) = true;
+      return 1;
+    }
+    return 0;
+  }, &found);
+  return found;
+}
+
 bool target_resolve() {
-  if (g_stack.base != 0) return true;
+  if (g_stack.base != 0 && aac_lib_present()) return true;
   if (g_target_unusable) return false;
+  // 主库已经确认过、纯粹在等 AAC 库：库还没来就别做完整的符号解析（每秒 20 次开销不小）
+  if (g_stack.base != 0) return false;
 
   FindResult lib;
   FindRequest req = {TARGET_LIB_NAME, &lib};
@@ -520,6 +538,7 @@ bool target_resolve() {
     // 这不是"不适配"，更不是崩溃 —— 必须把 probe 清掉，否则 marker_begin
     // 会当成上次启动失败，之后再也不会重试。交给 waiter 继续轮询。
     LOGI("%d AAC symbol(s) unresolved, waiting for libFraunhoferAAC.so", aac_missing);
+    g_stack.base = lib.base;   // 主库已确认，记下来让后续轮询走快速路径
     target_startup_done();
     return false;
   }
