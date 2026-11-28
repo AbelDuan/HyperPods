@@ -252,7 +252,10 @@ bool marker_begin() {
 
 }  // namespace
 
-void target_startup_done() { __system_property_set(kPropProbe, ""); }
+// 注意：Android 10+ 的 property 服务拒绝空值，__system_property_set(.., "")
+// 会失败，probe 永远留着，等于只尝试一次。这里写一个和 build_id 不同的标记，
+// marker_begin 的 strcmp(value, g_build_id) 自然就不命中。
+void target_startup_done() { __system_property_set(kPropProbe, "ok"); }
 
 namespace {
 
