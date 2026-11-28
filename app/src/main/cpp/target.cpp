@@ -5,6 +5,7 @@
 #include "log.h"
 
 #include <dlfcn.h>
+#include <xdl.h>
 #include <elf.h>
 #include <link.h>
 #include <setjmp.h>
