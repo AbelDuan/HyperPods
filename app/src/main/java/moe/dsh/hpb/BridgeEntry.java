@@ -47,6 +47,9 @@ public final class BridgeEntry {
     private static final String SP_AIRPODS = "AirpodsModel";
     private static final String ACTION_ANC_SELECT = "io.github.mo_setian.hyperpods.action.anc_select";
     /** HyperPods 把电量/ANC/佩戴推过来，由本进程写进官方读的 AirpodsModel。 */
+    private static final String WEAR_CONTROLLER_CLASS =
+            "plugin.settings.java.airpods.WearDetectionController";
+    private static volatile boolean wearDetectionHooked;
     private static final String ANC_CONTROLLER_CLASS = "plugin.settings.java.airpods.AncController";
     private static final String AIRPODS_INFO_CLASS =
             "com.android.bluetooth.ble.app.fastconnect.airpods.AirPodsInfo";
@@ -800,6 +803,13 @@ public final class BridgeEntry {
                         }
                         return;
                     }
+                    if (WEAR_CONTROLLER_CLASS.equals(name)) {
+                        if (!wearDetectionHooked) {
+                            wearDetectionHooked = true;
+                            hookWearDetection((ClassLoader) param.thisObject);
+                        }
+                        return;
+                    }
                     if (airPodsInfoHooked || !AIRPODS_INFO_CLASS.equals(name)) {
                         return;
                     }
@@ -964,6 +974,58 @@ public final class BridgeEntry {
     private static volatile boolean ancReceiverInstalled;
 
     /** 在蓝牙进程注册接收器，本地写 -air_anc 并通知 Repository */
+    /**
+     * 系统设置页的「佩戴检测」开关 -> HyperPods 的自动入耳检测。
+     * WearDetectionController.setWearDetectionState(boolean)：true=开，false=关。
+     */
+    private static void hookWearDetection(ClassLoader cl) {
+        try {
+            Class<?> c = XposedHelpers.findClass(
+                    "plugin.settings.java.airpods.WearDetectionController", cl);
+            for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                if (!"setWearDetectionState".equals(m.getName()) || m.getParameterTypes().length != 1
+                        || m.getParameterTypes()[0] != boolean.class) {
+                    continue;
+                }
+                XposedBridge.hookMethod(m, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        try {
+                            boolean on = (Boolean) param.args[0];
+                            log("system wear detection -> " + on);
+                            sendEarDetection(on);
+                        } catch (Throwable t) {
+                            log("wear detection forward failed: " + t);
+                        }
+                    }
+                });
+                log("hook WearDetectionController.setWearDetectionState ok");
+                return;
+            }
+            log("setWearDetectionState not found");
+        } catch (Throwable t) {
+            log("hookWearDetection failed: " + t);
+        }
+    }
+
+    /** 把耳检测开关发给 HyperPods（ACTION_EAR_DETECTION_SWITCH_CHANGED）。 */
+    private static void sendEarDetection(boolean enabled) {
+        try {
+            Context ctx = context();
+            if (ctx == null) {
+                return;
+            }
+            Intent i = new Intent("io.github.mo_setian.hyperpods.action.ear_detection_switch_changed");
+            i.putExtra("ear_detection", enabled);
+            i.putExtra("disconnect_audio", true);
+            i.setPackage(HYPERPODS_PROC);
+            ctx.sendBroadcast(i);
+            log("ear_detection -> " + enabled);
+        } catch (Throwable t) {
+            log("sendEarDetection failed: " + t);
+        }
+    }
+
     /** 收 HyperPods 推来的完整状态，写进官方 SP 并通知 provider 重读。 */
     private static void installSystemSyncReceiver(Context ctx) {
         if (systemSyncReceiver != null) {
@@ -1028,6 +1090,8 @@ public final class BridgeEntry {
                 right < 0 ? 0 : right, rc ? 1 : 2,
                 box < 0 ? 0 : box, bc ? 1 : 2, 2);
         writeKey(mac, "-air_battery", battery);
+        // 系统设置页的「佩戴检测」读 local_ear_detection：01=开 02=关
+        writeKey(mac, "-local_ear_detection", i.getBooleanExtra("ear_detection", true) ? "01" : "02");
         // checkAncAccess 只认两位：00=没戴(弹提示) 01=戴着 02=直接放行。
         // 之前写的是四位的 0101，匹配不上任何分支就落到 return false，"请佩戴耳机"就是这么来的。
         // air_wear_state 是「左两位 + 右两位」的四位码，00 = 在戴，其它 = 在盒。

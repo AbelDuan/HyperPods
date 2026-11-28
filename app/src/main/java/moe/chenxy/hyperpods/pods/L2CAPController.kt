@@ -339,6 +339,7 @@ object L2CAPController {
                 putExtra("left_in_case", battery.left?.isInCase ?: false)
                 putExtra("right_in_case", battery.right?.isInCase ?: false)
                 putExtra("model", currentPodsInfo?.modelNumber.orEmpty())
+                putExtra("ear_detection", earDetection)
             }
             HyperPodsBroadcasts.send(ctx, intent, HyperPodsBroadcasts.XIAOMI_BLUETOOTH)
         } catch (t: Throwable) {
@@ -1144,6 +1145,8 @@ object L2CAPController {
         autoSwitchToSpeaker = switchToSpeaker
         routeRetryCount = 0
         updateAudioForEarState()
+        // 让系统设置页的「佩戴检测」开关跟着动
+        pushStateToSystem()
     }
 
     private val routeCallback = object : MediaRouter2.RouteCallback() {
