@@ -38,10 +38,18 @@ object PodsIslandData {
             (battery.left?.isInCase == true || battery.right?.isInCase == true))
             "$caseLabel：${case.battery}%" + (if (case.isCharging) " ⚡" else "")
         else "HyperPods"
-        // Reuse the footer's existing subtitle instead of growing the top module
-        // when the case appears. Keep the system template and window size native.
-        return ExpandedText("${ear(leftLabel, battery.left)} | ${ear(rightLabel, battery.right)}",
-            warning, caseText)
+        // 盒电量并进同一行，避免通知栏被撑成三行把两只耳机挤掉。
+        // 顺序：盒在前，左右在后，用两个空格拉开间隔。
+        val line = buildString {
+            if (caseText != "HyperPods") {
+                append(caseText)
+                append("   ")
+            }
+            append(ear(leftLabel, battery.left))
+            append("   ")
+            append(ear(rightLabel, battery.right))
+        }
+        return ExpandedText(line, warning, "")
     }
 
     fun build(battery: BatteryParams): JSONObject {
