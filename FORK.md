@@ -3,6 +3,9 @@
 本仓库是 [Mo-SeTian/HyperPods](https://github.com/Mo-SeTian/HyperPods) 的 fork，用来把
 **系统 AirPods 详情页的桥接**并进 HyperPods 本体，不再单独维护一个 Xposed 模块。
 
+> 上游更新后的合并与装机流程见 **[UPSTREAM.md](UPSTREAM.md)**。
+> 合并完务必跑 `./tools/verify-fork.sh`，它检查 18 个关键改动点是否被冲掉。
+
 ## 分支
 
 | 分支 | 用途 |
