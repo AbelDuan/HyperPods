@@ -58,7 +58,7 @@ add_library(aaceld SHARED
 )
 
 target_include_directories(aaceld PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(aaceld PRIVATE shadowhook_static log)
+target_link_libraries(aaceld PRIVATE shadowhook_static log dl)
 
 target_compile_options(aaceld PRIVATE
     -Wall -Wextra -Werror

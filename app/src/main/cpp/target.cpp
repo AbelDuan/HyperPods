@@ -410,14 +410,21 @@ bool try_ota_at(size_t at, size_t* size) {
 //
 // 这里换一条路：自己建一个能看见 /apex 的 namespace，再用 android_dlopen_ext
 // 指定它。蓝牙栈本来就在同类 namespace 里 dlopen 这个库，所以库的依赖都能解析。
-// android_create_namespace 是 libdl 的私有接口，公开头文件里没有原型
-extern "C" android_namespace_t* android_create_namespace(const char* name,
-                                                         const char* ld_library_path,
-                                                         const char* default_library_path,
-                                                         uint64_t type,
-                                                         const char* permitted_when_isolated_path,
-                                                         android_namespace_t* parent,
-                                                         const android_dlextinfo* extinfo);
+// android_create_namespace 是 libdl 的私有接口：头文件里没有原型，
+// 也不是可链接的导出符号，只能在运行时 dlsym 拿。
+typedef android_namespace_t* (*create_namespace_t)(const char* name,
+                                                   const char* ld_library_path,
+                                                   const char* default_library_path,
+                                                   uint64_t type,
+                                                   const char* permitted_when_isolated_path,
+                                                   android_namespace_t* parent,
+                                                   const android_dlextinfo* extinfo);
+
+static create_namespace_t resolve_create_namespace() {
+  static create_namespace_t fn = reinterpret_cast<create_namespace_t>(
+      dlsym(RTLD_DEFAULT, "android_create_namespace"));
+  return fn;
+}
 
 static void* load_aac_library(const char* path) {
   // 先按最普通的方式试一次，能成就是最省事的
@@ -435,7 +442,12 @@ static void* load_aac_library(const char* path) {
   char lib_paths[1024];
   snprintf(lib_paths, sizeof(lib_paths), "%s:/apex/com.android.art/lib64:/system/lib64", dir);
 
-  android_namespace_t* ns = android_create_namespace(
+  create_namespace_t create_ns = resolve_create_namespace();
+  if (create_ns == nullptr) {
+    LOGE("android_create_namespace not available on this build");
+    return nullptr;
+  }
+  android_namespace_t* ns = create_ns(
       "aaceld_aac",                                  // name
       dir,                                           // ld_library_path
       lib_paths,                                     // default_library_path
