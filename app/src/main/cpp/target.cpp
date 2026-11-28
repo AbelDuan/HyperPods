@@ -430,13 +430,32 @@ bool target_resolve() {
     return false;
   }
 
-  // FDK-AAC 可能被拆到独立库；查不到时去那里补
+  // FDK-AAC 在新版 ROM 里被拆成了独立库，而且是按需 dlopen 的：
+  // libbluetooth_jni.so 里只有对它的引用，进程 maps 里查不到，
+  // dl_iterate_phdr 也遍历不到。这里按主库所在目录把它显式加载进来。
+  void* aac_handle = nullptr;
+  bool aac_external = false;
   FindResult aac_lib;
   FindRequest aac_req = {kAacLibName, &aac_lib};
   dl_iterate_phdr(phdr_cb, &aac_req);
-  void* aac_handle = aac_lib.found ? xdl_open(aac_lib.path, 0) : nullptr;
-  const bool aac_external = aac_handle != nullptr;
-  if (aac_external) LOGI("%s present, using it for the AAC encoder symbols", kAacLibName);
+  if (aac_lib.found) {
+    aac_handle = xdl_open(aac_lib.path, 0);
+  } else {
+    char aac_path[512];
+    snprintf(aac_path, sizeof(aac_path), "%s", lib.path);
+    char* slash = strrchr(aac_path, '/');
+    if (slash != nullptr) {
+      snprintf(slash + 1, sizeof(aac_path) - static_cast<size_t>(slash + 1 - aac_path),
+               "%s", kAacLibName);
+      aac_handle = dlopen(aac_path, RTLD_NOW);
+      if (aac_handle == nullptr) {
+        const char* err = dlerror();
+        LOGE("dlopen %s failed: %s", aac_path, err != nullptr ? err : "unknown");
+      }
+    }
+  }
+  if (aac_handle != nullptr) aac_external = true;
+  if (aac_external) LOGI("%s loaded, using it for the AAC encoder symbols", kAacLibName);
 
   int missing = 0, found = 0;
   for (const Name& n : kNames) {
