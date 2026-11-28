@@ -450,7 +450,10 @@ bool target_resolve() {
       // 不能用 dlopen：LSPosed 给模块的 linker namespace 只放行 /data 和
       // /mnt/expand，/apex 会被拒绝（"is not accessible for the namespace"）。
       // xdl 自己读 ELF 并做重定位，不走 linker namespace，主库也是这么打开的。
-      aac_handle = xdl_open(aac_path, 0);
+      // 必须强制加载：XDL_DEFAULT 只做 xdl_find（查已加载的库），库里没有它。
+      // XDL_ALWAYS_FORCE_LOAD 走内部 linker 的 dlopen 并伪造 caller_addr，
+      // 这样才能突破 clns-11 对 /apex 的限制。
+      aac_handle = xdl_open(aac_path, XDL_ALWAYS_FORCE_LOAD);
       if (aac_handle == nullptr) {
         LOGE("xdl_open %s failed", aac_path);
       }
