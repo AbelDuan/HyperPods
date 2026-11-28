@@ -51,10 +51,10 @@ class QuickControlsActivity : ComponentActivity() {
                 }
             }
         }
-        // windowType 设成了 TYPE_APPLICATION_OVERLAY，系统没给悬浮窗权限时这里必须降级，
-        // 否则 Activity 会直接抛异常起不来。降级后只是层级低一点，不影响使用。
-        if (!android.provider.Settings.canDrawOverlays(this)) {
-            window.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION)
+        // 普通 Activity 窗口是 TYPE_APPLICATION，会被其它悬浮应用盖住。
+        // 有悬浮窗权限时提到 TYPE_APPLICATION_OVERLAY；没有就保持默认，避免起不来。
+        if (android.provider.Settings.canDrawOverlays(this)) {
+            window.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
         }
         val screenWidth = resources.configuration.screenWidthDp
         val horizontalMargins = if (screenWidth < 360) 48 else 80
