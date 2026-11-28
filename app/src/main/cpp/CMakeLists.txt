@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.22.1)
-project("hyperpods_hook")
+# 必须声明 ASM：shadowhook 的 arch/arm64/sh_glue.S 定义了
+# shadowhook_interceptor_glue，本文件若不含 ASM 语言，CMake 不会编译 .S，
+# 链接时就报这个符号未定义。
+project("hyperpods_hook" CXX C ASM)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
