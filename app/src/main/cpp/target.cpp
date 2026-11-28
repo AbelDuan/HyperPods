@@ -514,8 +514,10 @@ bool target_resolve() {
   }
   if (aac_missing != 0) {
     // FDK-AAC 在部分 ROM 上按需 dlopen：AAC 编码器初始化前那个库不在进程里。
-    // 不能判成不适配，交给 waiter 继续轮询。
+    // 这不是"不适配"，更不是崩溃 —— 必须把 probe 清掉，否则 marker_begin
+    // 会当成上次启动失败，之后再也不会重试。交给 waiter 继续轮询。
     LOGI("%d AAC symbol(s) unresolved, waiting for libFraunhoferAAC.so", aac_missing);
+    target_startup_done();
     return false;
   }
 
