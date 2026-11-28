@@ -253,6 +253,7 @@ extern StackApi g_stack;
 // g_target_unusable, and returns false, if it is loaded but a name is
 // missing; then nothing may be hooked, now or later.
 bool target_resolve();
+bool target_fill_aac();
 extern bool g_target_unusable;
 
 // Measures the codec object's layout (see CodecLayout). The first two

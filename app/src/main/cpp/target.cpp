@@ -420,10 +420,9 @@ static bool aac_lib_present() {
 }
 
 bool target_resolve() {
-  if (g_stack.base != 0 && aac_lib_present()) return true;
+  // 主库解析过一次就够了；AAC 指针由 target_fill_aac 单独补
+  if (g_stack.base != 0) return true;
   if (g_target_unusable) return false;
-  // 主库已经确认过、纯粹在等 AAC 库：库还没来就别做完整的符号解析（每秒 20 次开销不小）
-  if (g_stack.base != 0) return false;
 
   FindResult lib;
   FindRequest req = {TARGET_LIB_NAME, &lib};
@@ -534,18 +533,19 @@ bool target_resolve() {
     return false;
   }
   if (aac_missing != 0) {
-    // FDK-AAC 在部分 ROM 上按需 dlopen：AAC 编码器初始化前那个库不在进程里。
-    // 这不是"不适配"，更不是崩溃 —— 必须把 probe 清掉，否则 marker_begin
-    // 会当成上次启动失败，之后再也不会重试。交给 waiter 继续轮询。
-    LOGI("%d AAC symbol(s) unresolved, waiting for libFraunhoferAAC.so", aac_missing);
-    g_stack.base = lib.base;   // 主库已确认，记下来让后续轮询走快速路径
-    target_startup_done();
-    return false;
+    // FDK-AAC 在部分 ROM 上按需 dlopen。这里的关键是：OpusSourceCtor 是在蓝牙栈
+    // 启动时调用的，比这个库进场早得多。如果整个解析要等 AAC 才放行，
+    // 改优先级那个 hook 就永远赶不上，AirPods 会一直选中优先级更高的 AAC。
+    // 所以主库确认后就返回成功，先装 hook；AAC 的指针留给 target_fill_aac 之后补。
+    LOGI("%d AAC symbol(s) unresolved; installing the hooks first and filling them in later",
+         aac_missing);
   }
 
   g_stack.base = lib.base;
-  // AAC 符号在独立库里时是绝对地址，不能再加主库 base
-  auto aac_addr = [aac_external](uintptr_t v) {
+  // AAC 符号在独立库里时是绝对地址，不能再加主库 base；
+  // 还没解析到的（v == 0）必须给 nullptr，否则会算成主库基址这种野指针。
+  auto aac_addr = [aac_external](uintptr_t v) -> void* {
+    if (v == 0) return nullptr;
     return aac_external ? reinterpret_cast<void*>(v)
                         : reinterpret_cast<void*>(g_stack.base + v);
   };
@@ -629,6 +629,55 @@ bool target_measure_getters() {
   LOGI("measured: codec_config_ 0x%zx, codec_user_config_ 0x%zx, %s codec_capability_",
        config, user, between / cfg == 4 ? "with" : "no");
   return true;
+}
+
+// libFraunhoferAAC.so 进场之后再单独补上编码器指针。
+// hook 早已装好，这里只填空，不重复装 hook。
+bool target_fill_aac() {
+  if (g_stack.aacEncOpen != nullptr) return true;
+  if (g_stack.base == 0) return false;
+  if (!aac_lib_present()) return false;
+
+  FindResult lib;
+  FindRequest req = {TARGET_LIB_NAME, &lib};
+  dl_iterate_phdr(phdr_cb, &req);
+  if (!lib.found) return false;
+
+  void* main_handle = xdl_open(lib.path, 0);
+  void* aac_handle = nullptr;
+  char aac_path[512];
+  snprintf(aac_path, sizeof(aac_path), "%s", lib.path);
+  char* slash = strrchr(aac_path, '/');
+  if (slash != nullptr) {
+    snprintf(slash + 1, sizeof(aac_path) - static_cast<size_t>(slash + 1 - aac_path),
+             "%s", kAacLibName);
+    aac_handle = xdl_open(aac_path, 0);
+  }
+  if (aac_handle == nullptr) {
+    if (main_handle != nullptr) xdl_close(main_handle);
+    return false;
+  }
+
+  auto sym = [&](const char* name, void* fallback_handle) -> void* {
+    void* p = main_handle != nullptr ? lookup(main_handle, name) : nullptr;
+    if (p == nullptr) p = lookup(fallback_handle, name);
+    return p;
+  };
+  g_stack.aacEncOpen = reinterpret_cast<aacEncOpen_t>(sym("aacEncOpen", aac_handle));
+  g_stack.aacEncClose = reinterpret_cast<aacEncClose_t>(sym("aacEncClose", aac_handle));
+  g_stack.aacEncEncode = reinterpret_cast<aacEncEncode_t>(sym("aacEncEncode", aac_handle));
+  g_stack.aacEncoder_SetParam =
+      reinterpret_cast<aacEncoder_SetParam_t>(sym("aacEncoder_SetParam", aac_handle));
+  g_stack.aacEncInfo = reinterpret_cast<aacEncInfo_t>(sym("aacEncInfo", aac_handle));
+
+  if (main_handle != nullptr) xdl_close(main_handle);
+  xdl_close(aac_handle);
+
+  const bool ok = g_stack.aacEncOpen != nullptr && g_stack.aacEncClose != nullptr &&
+                  g_stack.aacEncEncode != nullptr && g_stack.aacEncoder_SetParam != nullptr &&
+                  g_stack.aacEncInfo != nullptr;
+  if (ok) LOGI("AAC encoder symbols filled in; the encoder is usable now");
+  return ok;
 }
 
 bool target_measure_ota() {
