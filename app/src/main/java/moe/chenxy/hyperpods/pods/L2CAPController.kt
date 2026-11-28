@@ -270,6 +270,15 @@ object L2CAPController {
             // 不改耳机也不碰敏感数据，信任校验在这里反而会因 getPackageUid 取值
             // 拿不准而把广播整个丢掉，所以这条 action 直接放行。
             if (intent.action == HyperPodsAction.ACTION_EAR_DETECTION_SWITCH_CHANGED) {
+                // 系统设置页改了开关：除了更新内存，还要落盘到 AppPreferences，
+                // 否则 updateFeatureToggle 下次从 JSON 重读会把开关覆盖回去。
+                val on = intent.getBooleanExtra("ear_detection", true)
+                val ctx2 = mContext
+                if (ctx2 != null) {
+                    val snapshot = AppPreferences.read(ctx2).copy(earDetection = on)
+                    AppPreferences.save(ctx2, snapshot)
+                    AppPreferences.publish(ctx2, snapshot)
+                }
                 handleUIEvent(intent)
                 return
             }
