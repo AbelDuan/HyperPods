@@ -1006,8 +1006,15 @@ public final class BridgeEntry {
         writeKey(mac, "-air_battery", battery);
         // checkAncAccess 只认两位：00=没戴(弹提示) 01=戴着 02=直接放行。
         // 之前写的是四位的 0101，匹配不上任何分支就落到 return false，"请佩戴耳机"就是这么来的。
-        boolean anyOutOfCase = !lin || !rin;
-        writeKey(mac, "-air_wear_state", anyOutOfCase ? "02" : "00");
+        // air_wear_state 是「左两位 + 右两位」的四位码，00 = 在戴，其它 = 在盒。
+        // 设备互联 / 设置页都经 Config.parseWearCode 解析：
+        //   0000 -> "02" 双耳在戴（直接放行）
+        //   一只 00 -> "01" 单耳（还要查单耳ANC/佩戴检测）
+        //   都不是 00 -> "00" 判定没戴，弹「请佩戴耳机后使用」
+        // 之前写的 0101 就是"两只都在盒"，所以永远提示。
+        String leftWear = lin ? "01" : "00";
+        String rightWear = rin ? "01" : "00";
+        writeKey(mac, "-air_wear_state", leftWear + rightWear);
         log("sync state anc=" + anc + " " + state + " battery=" + battery);
         notifyAirpodsRepository();
     }
