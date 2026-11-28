@@ -262,23 +262,47 @@ public final class BridgeEntry {
         }
     }
 
-    /** 官方值 -> HyperPods ListeningMode ordinal+1（1=关 2=降噪 3=通透 4=自适应） */
+    /** 按钮码（1=降噪 2=关闭 3=通透 4=自适应）-> 官方 air_anc 命令码，照 AncController.toCommandCode。 */
+    private static String buttonToCommandCode(int button) {
+        switch (button) {
+            case 1:
+                return "02";
+            case 2:
+                return "01";
+            case 3:
+                return "03";
+            case 4:
+                return "04";
+            default:
+                return "";
+        }
+    }
+
+    /**
+     * 官方 air_anc「命令码」-> HyperPods noise_mode（1=关 2=降噪 3=通透 4=自适应）。
+     *
+     * AncController.toCommandCode() 是唯一定义：
+     *   按钮 1（降噪）-> 命令码 "02"
+     *   按钮 2（关闭）-> 命令码 "01"
+     *   按钮 3/4      -> "03"/"04"
+     * 所以命令码 01 就是关闭、02 才是降噪，这里必须 1:1 直传，不能互换。
+     */
     private static int ancStatus(String value) {
         if (value == null) {
             return 0;
         }
         String v = value.trim();
         if ("01".equals(v) || "1".equals(v)) {
-            return 2; // 官方 1 = 降噪
+            return 1; // 命令码 01 = 关闭
         }
         if ("02".equals(v) || "2".equals(v)) {
-            return 1; // 官方 2 = 关闭
+            return 2; // 命令码 02 = 降噪
         }
         if ("03".equals(v) || "3".equals(v)) {
-            return 3; // 官方 3 = 通透
+            return 3; // 通透
         }
         if ("04".equals(v) || "4".equals(v)) {
-            return 4; // 官方 4 = 自适应
+            return 4; // 自适应
         }
         return 0;
     }
@@ -858,7 +882,7 @@ public final class BridgeEntry {
                                     dt.start();
                                 }
                                 // settings 进程读不到 com.xiaomi.bluetooth 的 SP，交给蓝牙进程写
-                                sendAncWrite(mode);
+                                sendAncWrite(buttonToCommandCode(mode));
                             }
                             param.setResult(null);
                             // 让图标立刻跟上：updateView(Context,int) 是官方刷新按钮图标的入口，
@@ -920,17 +944,17 @@ public final class BridgeEntry {
 
     /** 让官方详情页重新读一次状态（和 h1.a.d 里 notifyChange 的做法一致） */
     /** 从 settings 进程把要写的 ANC 值广播给 com.xiaomi.bluetooth */
-    private static void sendAncWrite(int mode) {
+    private static void sendAncWrite(String commandCode) {
         try {
             Context ctx = context();
             if (ctx == null) {
                 return;
             }
             android.content.Intent i = new android.content.Intent(ACTION_SET_ANC);
-            i.putExtra("mode", mode);
+            i.putExtra("mode", commandCode);
             i.setPackage("com.xiaomi.bluetooth");
             ctx.sendBroadcast(i);
-            log("broadcast anc write " + mode);
+            log("broadcast anc write " + commandCode);
         } catch (Throwable t) {
             log("sendAncWrite failed: " + t);
         }
@@ -1029,14 +1053,18 @@ public final class BridgeEntry {
                 @Override
                 public void onReceive(Context c, android.content.Intent intent) {
                     try {
-                        int mode = intent.getIntExtra("mode", 0);
+                        String code = intent.getStringExtra("mode");
+                        if (code == null || code.isEmpty()) {
+                            log("receiver: empty mode");
+                            return;
+                        }
                         String addr = findAirPodsAddress();
                         if (addr == null) {
                             log("receiver: no address");
                             return;
                         }
-                        writeKey(addr, "-air_anc", String.format(Locale.ROOT, "%02d", mode));
-                        log("air_anc <- " + mode + " @" + addr);
+                        writeKey(addr, "-air_anc", code);
+                        log("air_anc <- " + code + " @" + addr);
                         notifyAirpodsRepository();
                     } catch (Throwable t) {
                         log("receiver anc failed: " + t);
