@@ -1089,7 +1089,9 @@ public final class BridgeEntry {
                 box < 0 ? 0 : box, bc ? 1 : 2, 2);
         writeKey(mac, "-air_battery", battery);
         // 系统设置页的「佩戴检测」读 local_ear_detection：01=开 02=关
-        writeKey(mac, "-local_ear_detection", i.getBooleanExtra("ear_detection", true) ? "01" : "02");
+        boolean earOn = i.getBooleanExtra("ear_detection", true);
+        writeKey(mac, "-local_ear_detection", earOn ? "01" : "02");
+        log("hyperpods reports ear_detection=" + earOn);
         // checkAncAccess 只认两位：00=没戴(弹提示) 01=戴着 02=直接放行。
         // 之前写的是四位的 0101，匹配不上任何分支就落到 return false，"请佩戴耳机"就是这么来的。
         // air_wear_state 是「左两位 + 右两位」的四位码，00 = 在戴，其它 = 在盒。
