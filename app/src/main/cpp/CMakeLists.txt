@@ -24,11 +24,12 @@ target_link_libraries(${CMAKE_PROJECT_NAME} android log)
 # ---------------------------------------------------------------------------
 set(SH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/shadowhook)
 
-if(${ANDROID_ABI} STREQUAL "arm64-v8a")
-    set(SH_ARCH "arm64")
-elseif(${ANDROID_ABI} STREQUAL "armeabi-v7a")
-    set(SH_ARCH "arm")
+# aaceld 的 hook 只实现了 arm64，架构直接定死；build.gradle 里已经用
+# abiFilters 限定 arm64-v8a，这里再断言一次，配错时立刻报出来。
+if(DEFINED ANDROID_ABI AND NOT ANDROID_ABI STREQUAL "arm64-v8a")
+    message(FATAL_ERROR "aaceld only supports arm64-v8a, got '${ANDROID_ABI}'")
 endif()
+set(SH_ARCH "arm64")
 
 file(GLOB SH_SRC
     ${SH}/*.c
