@@ -806,7 +806,7 @@ public final class BridgeEntry {
                     if (WEAR_CONTROLLER_CLASS.equals(name)) {
                         if (!wearDetectionHooked) {
                             wearDetectionHooked = true;
-                            hookWearDetection((ClassLoader) param.thisObject);
+                            hookWearDetection((Class<?>) r);
                         }
                         return;
                     }
@@ -978,10 +978,8 @@ public final class BridgeEntry {
      * 系统设置页的「佩戴检测」开关 -> HyperPods 的自动入耳检测。
      * WearDetectionController.setWearDetectionState(boolean)：true=开，false=关。
      */
-    private static void hookWearDetection(ClassLoader cl) {
+    private static void hookWearDetection(Class<?> c) {
         try {
-            Class<?> c = XposedHelpers.findClass(
-                    "plugin.settings.java.airpods.WearDetectionController", cl);
             for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
                 if (!"setWearDetectionState".equals(m.getName()) || m.getParameterTypes().length != 1
                         || m.getParameterTypes()[0] != boolean.class) {
