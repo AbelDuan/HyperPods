@@ -147,12 +147,22 @@ struct FindResult {
   bool found = false;
 };
 
+// 新版 ROM（HyperOS 4 / Android 17）把 FDK-AAC 从蓝牙栈里拆成了独立的
+// libFraunhoferAAC.so，主库里这几个符号变成 UND，只在主库里查必然查不到。
+constexpr const char* kAacLibName = "libFraunhoferAAC.so";
+
+struct FindRequest {
+  const char* name;
+  FindResult* out;
+};
+
 int phdr_cb(struct dl_phdr_info* info, size_t, void* data) {
-  auto* out = static_cast<FindResult*>(data);
+  auto* req = static_cast<FindRequest*>(data);
+  FindResult* out = req->out;
   if (info->dlpi_name == nullptr) return 0;
   const char* slash = strrchr(info->dlpi_name, '/');
   const char* leaf = slash ? slash + 1 : info->dlpi_name;
-  if (strcmp(leaf, TARGET_LIB_NAME) != 0) return 0;
+  if (strcmp(leaf, req->name) != 0) return 0;
   out->base = static_cast<uintptr_t>(info->dlpi_addr);
   out->phdr = info->dlpi_phdr;
   out->phnum = info->dlpi_phnum;
@@ -394,7 +404,8 @@ bool target_resolve() {
   if (g_target_unusable) return false;
 
   FindResult lib;
-  dl_iterate_phdr(phdr_cb, &lib);
+  FindRequest req = {TARGET_LIB_NAME, &lib};
+  dl_iterate_phdr(phdr_cb, &req);
   if (!lib.found) return false;
 
   if (!read_build_id(lib, g_build_id, sizeof(g_build_id))) {
@@ -419,9 +430,21 @@ bool target_resolve() {
     return false;
   }
 
+  // FDK-AAC 可能被拆到独立库；查不到时去那里补
+  FindResult aac_lib;
+  FindRequest aac_req = {kAacLibName, &aac_lib};
+  dl_iterate_phdr(phdr_cb, &aac_req);
+  void* aac_handle = aac_lib.found ? xdl_open(aac_lib.path, 0) : nullptr;
+  const bool aac_external = aac_handle != nullptr;
+  if (aac_external) LOGI("%s present, using it for the AAC encoder symbols", kAacLibName);
+
   int missing = 0, found = 0;
   for (const Name& n : kNames) {
     void* p = lookup(handle, n.symbol);
+    const bool is_aac = strncmp(n.symbol, "aac", 3) == 0;
+    if (p == nullptr && is_aac && aac_handle != nullptr) {
+      p = lookup(aac_handle, n.symbol);
+    }
     if (p != nullptr) found++;
     if (p == nullptr) {
       if (n.required) {
@@ -430,7 +453,10 @@ bool target_resolve() {
       }
       continue;
     }
-    kOffsets.*(n.field) = reinterpret_cast<uintptr_t>(p) - lib.base;
+    // AAC 符号可能来自另一个库，偏移基准不同，统一存绝对地址
+    kOffsets.*(n.field) = aac_external && is_aac
+        ? reinterpret_cast<uintptr_t>(p)
+        : reinterpret_cast<uintptr_t>(p) - lib.base;
   }
   for (const char* symbol : kShapeChecks) {
     if (lookup(handle, symbol) == nullptr) {
@@ -457,12 +483,17 @@ bool target_resolve() {
   }
 
   g_stack.base = lib.base;
-  g_stack.aacEncOpen  = reinterpret_cast<aacEncOpen_t>(target_addr(kOffsets.aacEncOpen));
-  g_stack.aacEncClose = reinterpret_cast<aacEncClose_t>(target_addr(kOffsets.aacEncClose));
-  g_stack.aacEncEncode = reinterpret_cast<aacEncEncode_t>(target_addr(kOffsets.aacEncEncode));
+  // AAC 符号在独立库里时是绝对地址，不能再加主库 base
+  auto aac_addr = [aac_external](uintptr_t v) {
+    return aac_external ? reinterpret_cast<void*>(v)
+                        : reinterpret_cast<void*>(g_stack.base + v);
+  };
+  g_stack.aacEncOpen  = reinterpret_cast<aacEncOpen_t>(aac_addr(kOffsets.aacEncOpen));
+  g_stack.aacEncClose = reinterpret_cast<aacEncClose_t>(aac_addr(kOffsets.aacEncClose));
+  g_stack.aacEncEncode = reinterpret_cast<aacEncEncode_t>(aac_addr(kOffsets.aacEncEncode));
   g_stack.aacEncoder_SetParam =
-      reinterpret_cast<aacEncoder_SetParam_t>(target_addr(kOffsets.aacEncoder_SetParam));
-  g_stack.aacEncInfo = reinterpret_cast<aacEncInfo_t>(target_addr(kOffsets.aacEncInfo));
+      reinterpret_cast<aacEncoder_SetParam_t>(aac_addr(kOffsets.aacEncoder_SetParam));
+  g_stack.aacEncInfo = reinterpret_cast<aacEncInfo_t>(aac_addr(kOffsets.aacEncInfo));
   g_stack.osi_malloc = reinterpret_cast<void* (*)(size_t)>(target_addr(kOffsets.osi_malloc));
   g_stack.osi_free = reinterpret_cast<void (*)(void*)>(target_addr(kOffsets.osi_free));
   g_stack.osi_property_get_bool =
