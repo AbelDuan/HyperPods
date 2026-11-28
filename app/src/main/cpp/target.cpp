@@ -410,6 +410,15 @@ bool try_ota_at(size_t at, size_t* size) {
 //
 // 这里换一条路：自己建一个能看见 /apex 的 namespace，再用 android_dlopen_ext
 // 指定它。蓝牙栈本来就在同类 namespace 里 dlopen 这个库，所以库的依赖都能解析。
+// android_create_namespace 是 libdl 的私有接口，公开头文件里没有原型
+extern "C" android_namespace_t* android_create_namespace(const char* name,
+                                                         const char* ld_library_path,
+                                                         const char* default_library_path,
+                                                         uint64_t type,
+                                                         const char* permitted_when_isolated_path,
+                                                         android_namespace_t* parent,
+                                                         const android_dlextinfo* extinfo);
+
 static void* load_aac_library(const char* path) {
   // 先按最普通的方式试一次，能成就是最省事的
   void* handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
@@ -430,7 +439,7 @@ static void* load_aac_library(const char* path) {
       "aaceld_aac",                                  // name
       dir,                                           // ld_library_path
       lib_paths,                                     // default_library_path
-      ANDROID_NAMESPACE_TYPE_REGULAR,                // shared with the default one
+      0 /* ANDROID_NAMESPACE_TYPE_REGULAR，公开头文件里没有这个宏 */,
       nullptr,                                       // permitted_when_isolated_path
       nullptr,                                       // parent
       nullptr);                                      // extinfo
