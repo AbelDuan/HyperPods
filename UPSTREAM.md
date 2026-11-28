@@ -168,7 +168,33 @@ rsh 'logcat -d | grep "HyperPodsBridge:" | tail -20'
 
 ---
 
-## 7. 已知边界
+## 7. AAC-ELD（移植自 wasdwasd0105/xiaomi-airpods-aac-eld）
+
+源码已并进 `app/src/main/cpp/`，`third_party/shadowhook` 静态链接，只在 arm64 编译。
+入口在 `BridgeEntry` 的 `com.android.bluetooth` 分支调 `AacEldBridge.start()`。
+
+**当前 ROM 上装不上 hook**，原因是鸡生蛋：
+
+| 事实 | 后果 |
+|---|---|
+| `Codec location: ADSP` | AAC 走 DSP 硬件编码 |
+| `libFraunhoferAAC.so` 从不加载 | `aacEncOpen` 等 5 个符号拿不到 |
+| 没 hook 就不触发 AAC-ELD | 软件路径永远不会被请求 |
+
+原模块靠「AAC 编码器初始化 → 把 FDK-AAC 拉进进程」来解析符号，
+这条路在 DSP 全程接管 AAC 的 ROM 上走不通。
+
+已处理的坑（换 ROM 或拿到源码改动时有用）：
+
+- `libFraunhoferAAC.so` 是按需 dlopen，默认 `xdl_open` 的 `xdl_find` 只查已加载库，
+  必须配合重试；`XDL_ALWAYS_FORCE_LOAD` 也过不了 LSPosed 的 `clns-11` namespace（只放行 /data）
+- `marker_begin` 用 `persist.bluetooth.aaceld.probe` 做崩溃保护，成功后要清空；
+  但 `__system_property_set(.., "")` 在 Android 10+ 无效，已改成写 `"ok"`
+- 其它必需符号缺失才判「不适配」，只有 AAC 缺失要留着重试
+
+**不生效时不会影响任何功能**：解析失败自动退出，桥接照常工作。
+
+## 8. 已知边界
 
 **控制面板压不过安全中心浮窗**。这是框架限制，不是 bug：
 
